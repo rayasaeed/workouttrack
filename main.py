@@ -19,11 +19,22 @@ def save_workouts(workouts):
         json.dump(workouts, file, indent=2)
 
 
+def ask_required(prompt):
+    while True:
+        answer = input(prompt).strip()
+
+        if answer:
+            return answer
+
+        print("Please enter a value.")
+
+
 def add_workout(workouts):
-    exercise = input("Exercise: ").strip()
-    sets = input("Sets: ").strip()
-    reps = input("Reps: ").strip()
-    weight = input("Weight: ").strip()
+    print("\nAdd Workout")
+    exercise = ask_required("Exercise name: ")
+    sets = ask_required("Number of sets: ")
+    reps = ask_required("Number of reps: ")
+    weight = ask_required("Weight used: ")
 
     workout = {
         "date": date.today().isoformat(),
@@ -43,19 +54,28 @@ def list_workouts(workouts):
         print("No workouts yet.")
         return
 
-    for index, workout in enumerate(workouts, start=1):
-        print(
-            f"{index}. {workout['date']} - "
-            f"{workout['exercise']}: {workout['sets']} sets x "
-            f"{workout['reps']} reps @ {workout['weight']}"
-        )
+    workouts_by_date = {}
+
+    for workout in workouts:
+        workout_date = workout["date"]
+        workouts_by_date.setdefault(workout_date, []).append(workout)
+
+    for workout_date, daily_workouts in workouts_by_date.items():
+        print(f"\n{workout_date}")
+
+        for index, workout in enumerate(daily_workouts, start=1):
+            print(
+                f"  {index}. {workout['exercise']}: "
+                f"{workout['sets']} sets x {workout['reps']} reps "
+                f"@ {workout['weight']}"
+            )
 
 
 def show_menu():
     print("\nWorkout Tracker")
     print("1. Add workout")
     print("2. List workouts")
-    print("3. Quit")
+    print("Type q to quit")
 
 
 def main():
@@ -69,11 +89,11 @@ def main():
             add_workout(workouts)
         elif choice == "2":
             list_workouts(workouts)
-        elif choice == "3":
+        elif choice.lower() == "q":
             print("Goodbye.")
             break
         else:
-            print("Please choose 1, 2, or 3.")
+            print("Please choose 1, 2, or q.")
 
 
 if __name__ == "__main__":
