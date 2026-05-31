@@ -1,22 +1,28 @@
-import json
+import sqlite3
 from datetime import date
-from pathlib import Path
 
 
-DATA_FILE = Path("workouts.json")
+DB_FILE = "workouts.db"
 
 
-def load_workouts():
-    if not DATA_FILE.exists():
-        return []
-
-    with DATA_FILE.open("r", encoding="utf-8") as file:
-        return json.load(file)
+def connect_database():
+    return sqlite3.connect(DB_FILE)
 
 
-def save_workouts(workouts):
-    with DATA_FILE.open("w", encoding="utf-8") as file:
-        json.dump(workouts, file, indent=2)
+def setup_database():
+    with connect_database() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS workouts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workout_date TEXT NOT NULL,
+                exercise TEXT NOT NULL,
+                sets TEXT NOT NULL,
+                reps TEXT NOT NULL,
+                weight TEXT NOT NULL
+            )
+            """
+        )
 
 
 def ask_required(prompt):
@@ -29,46 +35,97 @@ def ask_required(prompt):
         print("Please enter a value.")
 
 
-def add_workout(workouts):
-    print("\nAdd Workout")
-    exercise = ask_required("Exercise name: ")
+def add_one_workout(exercise):
     sets = ask_required("Number of sets: ")
     reps = ask_required("Number of reps: ")
     weight = ask_required("Weight used: ")
 
-    workout = {
-        "date": date.today().isoformat(),
-        "exercise": exercise,
-        "sets": sets,
-        "reps": reps,
-        "weight": weight,
-    }
+    with connect_database() as connection:
+        connection.execute(
+            """
+            INSERT INTO workouts (workout_date, exercise, sets, reps, weight)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (date.today().isoformat(), exercise, sets, reps, weight),
+        )
 
-    workouts.append(workout)
-    save_workouts(workouts)
     print("Workout saved.")
 
 
-def list_workouts(workouts):
+def add_workouts():
+    print("\nAdd Workout")
+    print("Type q as the exercise name to stop adding workouts.")
+
+    while True:
+        exercise = ask_required("Exercise name: ")
+
+        if exercise.lower() == "q":
+            break
+
+        add_one_workout(exercise)
+
+
+def get_workouts():
+    with connect_database() as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT id, workout_date, exercise, sets, reps, weight
+            FROM workouts
+            ORDER BY workout_date, id
+            """
+        ).fetchall()
+
+    return rows
+
+
+def print_table(headers, rows):
+    column_widths = []
+
+    for index, header in enumerate(headers):
+        widest_cell = max(len(str(row[index])) for row in rows)
+        column_widths.append(max(len(header), widest_cell))
+
+    header_line = " | ".join(
+        header.ljust(column_widths[index])
+        for index, header in enumerate(headers)
+    )
+    separator_line = "-+-".join("-" * width for width in column_widths)
+
+    print(header_line)
+    print(separator_line)
+
+    for row in rows:
+        print(
+            " | ".join(
+                str(value).ljust(column_widths[index])
+                for index, value in enumerate(row)
+            )
+        )
+
+
+def list_workouts():
+    workouts = get_workouts()
+
     if not workouts:
         print("No workouts yet.")
         return
 
-    workouts_by_date = {}
+    headers = ["id", "date", "exercise", "sets", "reps", "weight"]
+    rows = [
+        (
+            workout["id"],
+            workout["workout_date"],
+            workout["exercise"],
+            workout["sets"],
+            workout["reps"],
+            workout["weight"],
+        )
+        for workout in workouts
+    ]
 
-    for workout in workouts:
-        workout_date = workout["date"]
-        workouts_by_date.setdefault(workout_date, []).append(workout)
-
-    for workout_date, daily_workouts in workouts_by_date.items():
-        print(f"\n{workout_date}")
-
-        for index, workout in enumerate(daily_workouts, start=1):
-            print(
-                f"  {index}. {workout['exercise']}: "
-                f"{workout['sets']} sets x {workout['reps']} reps "
-                f"@ {workout['weight']}"
-            )
+    print()
+    print_table(headers, rows)
 
 
 def show_menu():
@@ -79,16 +136,16 @@ def show_menu():
 
 
 def main():
-    workouts = load_workouts()
+    setup_database()
 
     while True:
         show_menu()
         choice = input("Choose an option: ").strip()
 
         if choice == "1":
-            add_workout(workouts)
+            add_workouts()
         elif choice == "2":
-            list_workouts(workouts)
+            list_workouts()
         elif choice.lower() == "q":
             print("Goodbye.")
             break
