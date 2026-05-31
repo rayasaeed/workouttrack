@@ -1,14 +1,146 @@
+import json
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from html import escape
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+
+from flask import Flask, redirect, request
 
 
-DB_FILE = "workouts.db"
-HOST = "localhost"
-PORT = 8000
+app = Flask(__name__)
+DB_FILE = Path(__file__).with_name("workouts.db")
 WORKOUT_TYPES = ["Push", "Pull", "Legs", "Arms", "Back", "Cardio", "Other"]
+EXERCISES = {
+    "Push": [
+        "Bench Press",
+        "Incline Bench Press",
+        "Decline Bench Press",
+        "Dumbbell Bench Press",
+        "Chest Fly",
+        "Cable Fly",
+        "Push-Up",
+        "Shoulder Press",
+        "Dumbbell Shoulder Press",
+        "Arnold Press",
+        "Lateral Raise",
+        "Front Raise",
+        "Upright Row",
+        "Tricep Pushdown",
+        "Overhead Tricep Extension",
+        "Skull Crusher",
+        "Dips",
+    ],
+    "Pull": [
+        "Pull-Up",
+        "Chin-Up",
+        "Lat Pulldown",
+        "Wide Grip Lat Pulldown",
+        "Close Grip Lat Pulldown",
+        "Barbell Row",
+        "Dumbbell Row",
+        "T-Bar Row",
+        "Seated Cable Row",
+        "Chest Supported Row",
+        "Face Pull",
+        "Rear Delt Fly",
+        "Barbell Curl",
+        "Dumbbell Curl",
+        "Hammer Curl",
+        "Preacher Curl",
+        "Cable Curl",
+    ],
+    "Legs": [
+        "Back Squat",
+        "Front Squat",
+        "Goblet Squat",
+        "Leg Press",
+        "Hack Squat",
+        "Walking Lunge",
+        "Bulgarian Split Squat",
+        "Romanian Deadlift",
+        "Stiff Leg Deadlift",
+        "Leg Extension",
+        "Leg Curl",
+        "Seated Leg Curl",
+        "Hip Thrust",
+        "Glute Bridge",
+        "Standing Calf Raise",
+        "Seated Calf Raise",
+    ],
+    "Arms": [
+        "Barbell Curl",
+        "Dumbbell Curl",
+        "Hammer Curl",
+        "Preacher Curl",
+        "Cable Curl",
+        "Concentration Curl",
+        "Tricep Pushdown",
+        "Rope Pushdown",
+        "Overhead Tricep Extension",
+        "Skull Crusher",
+        "Close Grip Bench Press",
+        "Dips",
+    ],
+    "Back": [
+        "Deadlift",
+        "Rack Pull",
+        "Pull-Up",
+        "Chin-Up",
+        "Lat Pulldown",
+        "Barbell Row",
+        "Dumbbell Row",
+        "T-Bar Row",
+        "Seated Cable Row",
+        "Face Pull",
+        "Straight Arm Pulldown",
+        "Back Extension",
+    ],
+    "Cardio": [
+        "Walking",
+        "Incline Walk",
+        "Jogging",
+        "Running",
+        "Treadmill",
+        "Cycling",
+        "Stationary Bike",
+        "Elliptical",
+        "Stair Climber",
+        "Rowing Machine",
+        "Swimming",
+        "Jump Rope",
+        "HIIT",
+        "Badminton",
+        "Football",
+        "Basketball",
+    ],
+    "Other": [
+        "Stretching",
+        "Yoga",
+        "Pilates",
+        "Mobility Work",
+        "Core Workout",
+        "Plank",
+        "Crunch",
+        "Russian Twist",
+        "Mountain Climber",
+        "Custom Exercise",
+    ],
+}
+
+
+def format_display_date(date_text):
+    try:
+        parsed_date = datetime.strptime(date_text, "%Y-%m-%d")
+    except ValueError:
+        return date_text
+
+    day = parsed_date.day
+    if 10 <= day % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
+    return parsed_date.strftime(f"%A, %B {day}{suffix} %Y")
 
 
 def connect_database():
@@ -37,13 +169,27 @@ def setup_database():
                 sets TEXT NOT NULL,
                 reps TEXT NOT NULL,
                 weight TEXT NOT NULL,
+                duration TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY (session_id)
                     REFERENCES workout_sessions (id)
                     ON DELETE CASCADE
             )
             """
         )
+        add_duration_column_if_needed(connection)
         migrate_old_workouts(connection)
+
+
+def add_duration_column_if_needed(connection):
+    columns = connection.execute(
+        "PRAGMA table_info(workout_exercises)"
+    ).fetchall()
+    column_names = [column[1] for column in columns]
+
+    if "duration" not in column_names:
+        connection.execute(
+            "ALTER TABLE workout_exercises ADD COLUMN duration TEXT NOT NULL DEFAULT ''"
+        )
 
 
 def migrate_old_workouts(connection):
@@ -84,10 +230,10 @@ def migrate_old_workouts(connection):
         connection.execute(
             """
             INSERT INTO workout_exercises
-                (session_id, exercise, sets, reps, weight)
-            VALUES (?, ?, ?, ?, ?)
+                (session_id, exercise, sets, reps, weight, duration)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (session_ids[workout_date], exercise, sets, reps, weight),
+            (session_ids[workout_date], exercise, sets, reps, weight, ""),
         )
 
 
@@ -114,15 +260,15 @@ def delete_session(session_id):
         )
 
 
-def add_exercise(session_id, exercise, sets, reps, weight):
+def add_exercise(session_id, exercise, sets="", reps="", weight="", duration=""):
     with connect_database() as connection:
         connection.execute(
             """
             INSERT INTO workout_exercises
-                (session_id, exercise, sets, reps, weight)
-            VALUES (?, ?, ?, ?, ?)
+                (session_id, exercise, sets, reps, weight, duration)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (session_id, exercise, sets, reps, weight),
+            (session_id, exercise, sets, reps, weight, duration),
         )
 
 
@@ -174,7 +320,7 @@ def get_session_exercises(session_id):
         connection.row_factory = sqlite3.Row
         return connection.execute(
             """
-            SELECT id, exercise, sets, reps, weight
+            SELECT id, exercise, sets, reps, weight, duration
             FROM workout_exercises
             WHERE session_id = ?
             ORDER BY id
@@ -183,28 +329,98 @@ def get_session_exercises(session_id):
         ).fetchall()
 
 
-def get_exercise_names(workout_type=""):
+def get_recent_exercise_names(workout_type):
     with connect_database() as connection:
         rows = connection.execute(
             """
             SELECT
                 workout_exercises.exercise,
-                MAX(
-                    CASE
-                        WHEN workout_sessions.workout_type = ? THEN 1
-                        ELSE 0
-                    END
-                ) AS type_match
+                MAX(workout_sessions.workout_date) AS latest_date,
+                MAX(workout_exercises.id) AS latest_id
             FROM workout_exercises
             JOIN workout_sessions
                 ON workout_sessions.id = workout_exercises.session_id
+            WHERE workout_sessions.workout_type = ?
             GROUP BY workout_exercises.exercise
-            ORDER BY type_match DESC, workout_exercises.exercise
+            ORDER BY latest_date DESC, latest_id DESC
             """,
             (workout_type,),
         ).fetchall()
 
     return [row[0] for row in rows]
+
+
+def get_all_exercise_names():
+    names = []
+    for exercise_type, exercises in EXERCISES.items():
+        names.extend(exercises)
+
+    with connect_database() as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT exercise
+            FROM workout_exercises
+            """
+        ).fetchall()
+
+    names.extend(row[0] for row in rows)
+    unique_names = []
+    seen_names = set()
+
+    for exercise_name in sorted(names, key=str.lower):
+        normalized_name = exercise_name.lower()
+
+        if normalized_name not in seen_names:
+            unique_names.append(exercise_name)
+            seen_names.add(normalized_name)
+
+    return unique_names
+
+
+def get_recent_performances_by_exercise():
+    with connect_database() as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT
+                workout_exercises.exercise,
+                workout_exercises.sets,
+                workout_exercises.reps,
+                workout_exercises.weight,
+                workout_exercises.duration,
+                workout_sessions.workout_date,
+                workout_sessions.workout_type
+            FROM workout_exercises
+            JOIN workout_sessions
+                ON workout_sessions.id = workout_exercises.session_id
+            ORDER BY
+                LOWER(workout_exercises.exercise),
+                workout_sessions.workout_date DESC,
+                workout_exercises.id DESC
+            """
+        ).fetchall()
+
+    recent_performances = {}
+    for row in rows:
+        key = row["exercise"].lower()
+        exercise_history = recent_performances.setdefault(key, [])
+
+        if len(exercise_history) < 3:
+            if row["workout_type"] == "Cardio":
+                summary = f"{row['duration']} min"
+            else:
+                summary = (
+                    f"{row['sets']} sets x {row['reps']} reps "
+                    f"@ {row['weight']} kg"
+                )
+
+            exercise_history.append({
+                "date": format_display_date(row["workout_date"]),
+                "type": row["workout_type"],
+                "summary": summary,
+            })
+
+    return recent_performances
 
 
 def render_layout(content, message=""):
@@ -336,6 +552,17 @@ def render_layout(content, message=""):
             text-align: center;
         }}
 
+        .progress {{
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            color: #1e3a8a;
+            display: none;
+            font-size: 14px;
+            margin: -12px 0 24px;
+            padding: 10px 12px;
+        }}
+
         @media (max-width: 760px) {{
             .actions,
             .session-form,
@@ -376,9 +603,53 @@ def render_type_options(selected_type=""):
 
 def render_exercise_options(workout_type=""):
     options = ""
-    for exercise_name in get_exercise_names(workout_type):
-        options += f'<option value="{escape(exercise_name)}"></option>'
+    for exercise_name in get_recent_exercise_names(workout_type):
+        options += (
+            f'<option value="{escape(exercise_name)}" '
+            f'label="Recent {escape(workout_type)}"></option>'
+        )
+
+    for exercise_name in get_all_exercise_names():
+        options += (
+            f'<option value="{escape(exercise_name)}" '
+            f'label="All exercises"></option>'
+        )
+
     return options
+
+
+def render_latest_performance_script():
+    latest_performance = json.dumps(get_recent_performances_by_exercise())
+    latest_performance = latest_performance.replace("<", "\\u003c")
+
+    return f"""
+        <script>
+            const latestPerformance = {latest_performance};
+            const exerciseInput = document.querySelector("[name='exercise']");
+            const progressBox = document.querySelector("#latest-performance");
+
+            function updateLatestPerformance() {{
+                const exerciseName = exerciseInput.value.trim().toLowerCase();
+                const performances = latestPerformance[exerciseName];
+
+                if (!performances) {{
+                    progressBox.style.display = "none";
+                    progressBox.textContent = "";
+                    return;
+                }}
+
+                progressBox.style.display = "block";
+                progressBox.innerHTML = "<strong>Most recent:</strong><br>" +
+                    performances.map((performance) =>
+                        `${{performance.date}} (${{performance.type}}) - ` +
+                        performance.summary
+                    ).join("<br>");
+            }}
+
+            exerciseInput.addEventListener("input", updateLatestPerformance);
+            exerciseInput.addEventListener("change", updateLatestPerformance);
+        </script>
+"""
 
 
 def render_home_page(message=""):
@@ -464,29 +735,88 @@ def render_session_page(session_id, message=""):
 
     exercises = get_session_exercises(session_id)
     rows = ""
+    is_cardio = session["workout_type"] == "Cardio"
 
     for exercise in exercises:
-        rows += f"""
-            <tr>
-                <td>{exercise["id"]}</td>
-                <td>{escape(exercise["exercise"])}</td>
-                <td>{escape(exercise["sets"])}</td>
-                <td>{escape(exercise["reps"])}</td>
-                <td>{escape(exercise["weight"])}</td>
-                <td>
-                    <form class="delete-form" method="post" action="/exercises/delete">
-                        <input type="hidden" name="id" value="{exercise["id"]}">
-                        <input type="hidden" name="session_id" value="{session_id}">
-                        <button class="danger" type="submit">Delete</button>
-                    </form>
-                </td>
-            </tr>
-        """
+        if is_cardio:
+            rows += f"""
+                <tr>
+                    <td>{exercise["id"]}</td>
+                    <td>{escape(exercise["exercise"])}</td>
+                    <td>{escape(exercise["duration"])} min</td>
+                    <td>
+                        <form class="delete-form" method="post" action="/exercises/delete">
+                            <input type="hidden" name="id" value="{exercise["id"]}">
+                            <input type="hidden" name="session_id" value="{session_id}">
+                            <button class="danger" type="submit">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            """
+        else:
+            rows += f"""
+                <tr>
+                    <td>{exercise["id"]}</td>
+                    <td>{escape(exercise["exercise"])}</td>
+                    <td>{escape(exercise["sets"])}</td>
+                    <td>{escape(exercise["reps"])}</td>
+                    <td>{escape(exercise["weight"])} kg</td>
+                    <td>
+                        <form class="delete-form" method="post" action="/exercises/delete">
+                            <input type="hidden" name="id" value="{exercise["id"]}">
+                            <input type="hidden" name="session_id" value="{session_id}">
+                            <button class="danger" type="submit">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            """
 
     if not rows:
+        column_count = 4 if is_cardio else 6
         rows = """
             <tr>
-                <td colspan="6" class="empty">No exercises in this session yet.</td>
+                <td colspan="{column_count}" class="empty">No exercises in this session yet.</td>
+            </tr>
+        """.format(column_count=column_count)
+
+    if is_cardio:
+        exercise_fields = """
+            <label>
+                Duration
+                <input name="duration" required>
+            </label>
+        """
+        table_headers = """
+            <tr>
+                <th>id</th>
+                <th>exercise</th>
+                <th>duration</th>
+                <th>delete</th>
+            </tr>
+        """
+    else:
+        exercise_fields = """
+            <label>
+                Sets
+                <input name="sets" required>
+            </label>
+            <label>
+                Reps
+                <input name="reps" required>
+            </label>
+            <label>
+                Weight
+                <input name="weight" required>
+            </label>
+        """
+        table_headers = """
+            <tr>
+                <th>id</th>
+                <th>exercise</th>
+                <th>sets</th>
+                <th>reps</th>
+                <th>weight</th>
+                <th>delete</th>
             </tr>
         """
 
@@ -505,151 +835,115 @@ def render_session_page(session_id, message=""):
                     {render_exercise_options(session["workout_type"])}
                 </datalist>
             </label>
-            <label>
-                Sets
-                <input name="sets" required>
-            </label>
-            <label>
-                Reps
-                <input name="reps" required>
-            </label>
-            <label>
-                Weight
-                <input name="weight" required>
-            </label>
+            {exercise_fields}
             <button type="submit">Add</button>
         </form>
+        <div id="latest-performance" class="progress"></div>
         <table>
             <thead>
-                <tr>
-                    <th>id</th>
-                    <th>exercise</th>
-                    <th>sets</th>
-                    <th>reps</th>
-                    <th>weight</th>
-                    <th>delete</th>
-                </tr>
+                {table_headers}
             </thead>
             <tbody>
                 {rows}
             </tbody>
         </table>
+        {render_latest_performance_script()}
 """
     return render_layout(content, message)
 
 
-def get_id_from_query(path):
-    query = parse_qs(urlparse(path).query)
-    value = query.get("id", [""])[0]
-    if value.isdigit():
-        return int(value)
-    return None
+@app.route("/")
+def home():
+    return render_home_page()
 
 
-def redirect_to(handler, path):
-    handler.send_response(303)
-    handler.send_header("Location", path)
-    handler.end_headers()
+@app.route("/sessions")
+def sessions():
+    return render_sessions_page()
 
 
-class WorkoutHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        parsed_path = urlparse(self.path).path
+@app.route("/session")
+def session_page():
+    session_id = request.args.get("id", "")
 
-        if parsed_path == "/":
-            self.send_html(render_home_page())
-            return
+    if session_id.isdigit():
+        return render_session_page(int(session_id))
 
-        if parsed_path == "/sessions":
-            self.send_html(render_sessions_page())
-            return
+    return render_sessions_page("Session not found.")
 
-        if parsed_path == "/session":
-            session_id = get_id_from_query(self.path)
-            if session_id:
-                self.send_html(render_session_page(session_id))
-            else:
-                self.send_html(render_sessions_page("Session not found."))
-            return
 
-        self.send_response(404)
-        self.end_headers()
+@app.post("/sessions/create")
+def create_session_route():
+    workout_date = request.form.get("workout_date", "").strip()
+    workout_type = request.form.get("workout_type", "").strip()
 
-    def do_POST(self):
-        parsed_path = urlparse(self.path).path
+    if workout_date and workout_type in WORKOUT_TYPES:
+        session_id = create_session(workout_date, workout_type)
+        return redirect(f"/session?id={session_id}")
 
-        if parsed_path == "/sessions/create":
-            form = self.read_form()
-            workout_date = form.get("workout_date", [""])[0].strip()
-            workout_type = form.get("workout_type", [""])[0].strip()
+    return render_home_page("Please choose a date and type.")
 
-            if workout_date and workout_type in WORKOUT_TYPES:
-                session_id = create_session(workout_date, workout_type)
-                redirect_to(self, f"/session?id={session_id}")
-            else:
-                self.send_html(render_home_page("Please choose a date and type."))
-            return
 
-        if parsed_path == "/sessions/delete":
-            form = self.read_form()
-            session_id = form.get("id", [""])[0].strip()
+@app.post("/sessions/delete")
+def delete_session_route():
+    session_id = request.form.get("id", "").strip()
 
-            if session_id.isdigit():
-                delete_session(int(session_id))
-                self.send_html(render_sessions_page("Session deleted."))
-            else:
-                self.send_html(render_sessions_page("Could not delete session."))
-            return
+    if session_id.isdigit():
+        delete_session(int(session_id))
+        return render_sessions_page("Session deleted.")
 
-        if parsed_path == "/exercises/add":
-            form = self.read_form()
-            session_id = form.get("session_id", [""])[0].strip()
-            exercise = form.get("exercise", [""])[0].strip()
-            sets = form.get("sets", [""])[0].strip()
-            reps = form.get("reps", [""])[0].strip()
-            weight = form.get("weight", [""])[0].strip()
+    return render_sessions_page("Could not delete session.")
 
-            if session_id.isdigit() and exercise and sets and reps and weight:
-                add_exercise(int(session_id), exercise, sets, reps, weight)
-                self.send_html(render_session_page(int(session_id), "Exercise saved."))
-            else:
-                self.send_html(render_sessions_page("Please fill out every field."))
-            return
 
-        if parsed_path == "/exercises/delete":
-            form = self.read_form()
-            exercise_id = form.get("id", [""])[0].strip()
-            session_id = form.get("session_id", [""])[0].strip()
+@app.post("/exercises/add")
+def add_exercise_route():
+    session_id = request.form.get("session_id", "").strip()
+    exercise = request.form.get("exercise", "").strip()
+    sets = request.form.get("sets", "").strip()
+    reps = request.form.get("reps", "").strip()
+    weight = request.form.get("weight", "").strip()
+    duration = request.form.get("duration", "").strip()
 
-            if exercise_id.isdigit() and session_id.isdigit():
-                delete_exercise(int(exercise_id))
-                self.send_html(render_session_page(int(session_id), "Exercise deleted."))
-            else:
-                self.send_html(render_sessions_page("Could not delete exercise."))
-            return
+    if not session_id.isdigit() or not exercise:
+        return render_sessions_page("Please fill out every field.")
 
-        self.send_response(404)
-        self.end_headers()
+    session = get_session(int(session_id))
+    if not session:
+        return render_sessions_page("Session not found.")
 
-    def read_form(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        return parse_qs(body)
+    if session["workout_type"] == "Cardio":
+        if duration:
+            add_exercise(int(session_id), exercise, duration=duration)
+            return render_session_page(int(session_id), "Exercise saved.")
 
-    def send_html(self, html):
-        content = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(content)))
-        self.end_headers()
-        self.wfile.write(content)
+        return render_session_page(int(session_id), "Please enter a duration.")
+
+    if sets and reps and weight:
+        add_exercise(int(session_id), exercise, sets, reps, weight)
+        return render_session_page(int(session_id), "Exercise saved.")
+
+    return render_session_page(int(session_id), "Please fill out every field.")
+
+
+@app.post("/exercises/delete")
+def delete_exercise_route():
+    exercise_id = request.form.get("id", "").strip()
+    session_id = request.form.get("session_id", "").strip()
+
+    if exercise_id.isdigit() and session_id.isdigit():
+        delete_exercise(int(exercise_id))
+        return render_session_page(int(session_id), "Exercise deleted.")
+
+    return render_sessions_page("Could not delete exercise.")
 
 
 def main():
     setup_database()
-    server = HTTPServer((HOST, PORT), WorkoutHandler)
-    print(f"Open http://{HOST}:{PORT} in Chrome or Safari")
-    server.serve_forever()
+    print("Open http://localhost:8000 in Chrome or Safari")
+    app.run(host="localhost", port=8000, debug=True, use_reloader=False)
+
+
+setup_database()
 
 
 if __name__ == "__main__":
