@@ -1,0 +1,166 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #f6f8fb;
+    color: #1f2937;
+    font-family: Arial, sans-serif;
+}
+
+main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 32px 20px;
+}
+
+h1,
+h2 {
+    margin: 0;
+}
+
+h1 {
+    font-size: 32px;
+}
+
+h2 {
+    font-size: 22px;
+    margin-bottom: 16px;
+}
+
+.topbar,
+.session-heading {
+    align-items: center;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    margin-bottom: 24px;
+}
+
+.actions {
+    display: flex;
+    gap: 12px;
+}
+
+.session-form,
+.exercise-form {
+    align-items: end;
+    display: grid;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.session-form {
+    grid-template-columns: repeat(2, minmax(160px, 1fr)) auto;
+}
+
+.exercise-form {
+    grid-template-columns: minmax(180px, 1.4fr) minmax(260px, 2fr) auto;
+}
+
+.field-row {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(3, minmax(80px, 1fr));
+}
+
+#cardio-fields {
+    grid-template-columns: minmax(120px, 1fr);
+}
+
+label {
+    display: grid;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+input,
+select {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 16px;
+    padding: 10px;
+}
+
+button {
+    border: 0;
+    border-radius: 6px;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 11px 16px;
+}
+
+button.secondary {
+    background: #475569;
+}
+
+button.danger {
+    background: #dc2626;
+    padding: 8px 12px;
+}
+
+table {
+    background: white;
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th,
+td {
+    border: 1px solid #dbe3ef;
+    padding: 12px;
+    text-align: left;
+}
+
+th {
+    background: #e9eef5;
+}
+
+.message {
+    background: #dcfce7;
+    border: 1px solid #86efac;
+    border-radius: 6px;
+    margin: 0 0 24px;
+    padding: 10px 12px;
+}
+
+.progress {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    color: #1e3a8a;
+    font-size: 14px;
+    margin: -12px 0 24px;
+    padding: 10px 12px;
+}
+
+.empty {
+    color: #64748b;
+    text-align: center;
+}
+
+@media (max-width: 760px) {
+    .topbar,
+    .session-heading,
+    .actions,
+    .session-form,
+    .exercise-form,
+    .field-row {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    table {
+        font-size: 14px;
+    }
+
+    th,
+    td {
+        padding: 8px;
+    }
+}

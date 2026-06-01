@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Workout Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main>
+        <header class="topbar">
+            <h1>Workout Tracker</h1>
+            <div class="actions">
+                <button id="create-session-view" type="button">Create Session</button>
+                <button id="sessions-view" class="secondary" type="button">View Sessions</button>
+            </div>
+        </header>
+
+        <p id="message" class="message" hidden></p>
+
+        <section id="create-session-panel">
+            <h2>Create workout session</h2>
+            <form id="session-form" class="session-form">
+                <label>
+                    Date
+                    <input id="session-date" name="workout_date" type="date" required>
+                </label>
+                <label>
+                    Type
+                    <select id="session-type" name="workout_type" required>
+                        <option>Push</option>
+                        <option>Pull</option>
+                        <option>Legs</option>
+                        <option>Arms</option>
+                        <option>Back</option>
+                        <option>Cardio</option>
+                        <option>Other</option>
+                    </select>
+                </label>
+                <button type="submit">Create</button>
+            </form>
+        </section>
+
+        <section id="sessions-panel" hidden>
+            <h2>Workout sessions</h2>
+            <div id="sessions-list"></div>
+        </section>
+
+        <section id="session-panel" hidden>
+            <div class="session-heading">
+                <h2 id="active-session-title"></h2>
+                <button id="back-to-sessions" class="secondary" type="button">Back</button>
+            </div>
+
+            <form id="exercise-form" class="exercise-form">
+                <label>
+                    Exercise
+                    <input id="exercise-name" list="exercise-options" required>
+                    <datalist id="exercise-options"></datalist>
+                </label>
+                <div id="strength-fields" class="field-row">
+                    <label>
+                        Sets
+                        <input id="exercise-sets">
+                    </label>
+                    <label>
+                        Reps
+                        <input id="exercise-reps">
+                    </label>
+                    <label>
+                        Weight
+                        <input id="exercise-weight">
+                    </label>
+                </div>
+                <div id="cardio-fields" class="field-row" hidden>
+                    <label>
+                        Duration
+                        <input id="exercise-duration">
+                    </label>
+                </div>
+                <button type="submit">Add</button>
+            </form>
+
+            <div id="latest-performance" class="progress" hidden></div>
+            <div id="exercise-list"></div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
